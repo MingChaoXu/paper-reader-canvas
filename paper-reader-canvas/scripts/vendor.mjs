@@ -1,6 +1,7 @@
-import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliCompressSync, constants } from "node:zlib";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageRoot = join(root, "node_modules", "pdfjs-dist");
@@ -20,7 +21,22 @@ for (const directory of ["cmaps", "standard_fonts", "wasm"]) {
     await cp(join(packageRoot, directory), join(root, "vendor", directory), { recursive: true });
 }
 
-// The app's GitHub folder installer rejects files larger than 1 MB.
+// The app's GitHub folder installer rejects files larger than 1 MB and folders above 5 MB.
+const cmaps = join(root, "vendor", "cmaps");
+const names = (await readdir(cmaps)).filter((name) => name.endsWith(".bcmap")).sort();
+const chunks = await Promise.all(names.map((name) => readFile(join(cmaps, name))));
+let offset = 0;
+const index = {};
+for (let i = 0; i < names.length; i++) {
+    index[names[i]] = [offset, chunks[i].length];
+    offset += chunks[i].length;
+}
+await writeFile(join(cmaps, "index.json"), JSON.stringify(index));
+await writeFile(join(cmaps, "packed.br"), brotliCompressSync(Buffer.concat(chunks), {
+    params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
+}));
+await Promise.all(names.map((name) => rm(join(cmaps, name))));
+
 const worker = await readFile(join(packageRoot, "build/pdf.worker.min.mjs"));
 const split = Math.ceil(worker.length / 2);
 for (const [index, part] of [worker.subarray(0, split), worker.subarray(split)].entries()) {

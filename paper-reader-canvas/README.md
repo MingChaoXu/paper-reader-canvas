@@ -44,7 +44,7 @@ npm run vendor
 npm test
 ```
 
-`scripts/vendor.mjs` copies the pinned PDF.js build, text-layer stylesheet, fonts, CMaps, WASM, and license into `vendor/`. It splits the worker into two files because the app's GitHub folder installer rejects files above 1 MB; the local server serves them as one JavaScript response. Changes to the extension must be followed by **Reload extensions** in the Copilot app. The extension's SDK dependency is supplied by Copilot at runtime.
+`scripts/vendor.mjs` copies the pinned PDF.js build, text-layer stylesheet, fonts, CMaps, WASM, and license into `vendor/`. The app's GitHub folder installer limits individual files to 1 MB and the folder to 5 MB. The script splits the worker and compresses the CMaps into a local pack; the reader server serves both in PDF.js's expected formats. Changes to the extension must be followed by **Reload extensions** in the Copilot app. The extension's SDK dependency is supplied by Copilot at runtime.
 
 ## License
 

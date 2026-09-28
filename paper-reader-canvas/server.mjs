@@ -5,9 +5,11 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliDecompressSync } from "node:zlib";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const maxSelection = 12_000;
+let cmaps;
 const assets = new Map([
     ["/", ["web/index.html", "text/html; charset=utf-8"]],
     ["/app.mjs", ["web/app.mjs", "text/javascript; charset=utf-8"]],
@@ -225,6 +227,18 @@ export async function createReaderServer({ workspaceRoot, initialPath, send }) {
                 sendJson(response, 200, { messageId });
             } else if (request.method === "GET") {
                 let asset = assets.get(route);
+                if (!asset && /^\/vendor\/cmaps\/[A-Za-z0-9._-]+\.bcmap$/.test(route)) {
+                    cmaps ??= Promise.all([
+                        readFile(join(root, "vendor/cmaps/index.json"), "utf8"),
+                        readFile(join(root, "vendor/cmaps/packed.br")),
+                    ]).then(([index, data]) => ({ index: JSON.parse(index), bytes: brotliDecompressSync(data) }));
+                    const { index, bytes } = await cmaps;
+                    const entry = index[basename(route)];
+                    if (!entry) throw new ReaderError("not_found", "CMap not found.", 404);
+                    response.writeHead(200, { "Content-Type": "application/octet-stream" });
+                    response.end(bytes.subarray(entry[0], entry[0] + entry[1]));
+                    return;
+                }
                 if (!asset && /^\/vendor\/(cmaps|standard_fonts|wasm)\/[A-Za-z0-9._-]+$/.test(route) && !route.includes("..")) {
                     asset = [route.slice(1), route.endsWith(".wasm") ? "application/wasm" : "application/octet-stream"];
                 }

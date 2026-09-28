@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { brotliDecompressSync } from "node:zlib";
 import { createReaderServer, translationPrompt } from "../server.mjs";
 import * as pdfjs from "../vendor/pdf.min.mjs";
 
@@ -76,6 +77,13 @@ test("reads local PDF ranges and sends only the selected words and context", asy
         const servedWorker = Buffer.from(await (await fetch(new URL("vendor/pdf.worker.min.mjs", base))).arrayBuffer());
         const sourceWorker = Buffer.concat(await Promise.all(workerParts.map((url) => readFile(url))));
         assert.deepEqual(servedWorker, sourceWorker);
+        const index = JSON.parse(await readFile(new URL("../vendor/cmaps/index.json", import.meta.url), "utf8"));
+        const packed = brotliDecompressSync(await readFile(new URL("../vendor/cmaps/packed.br", import.meta.url)));
+        const [offset, length] = index["Adobe-GB1-UCS2.bcmap"];
+        const map = await fetch(new URL("vendor/cmaps/Adobe-GB1-UCS2.bcmap", base));
+        assert.equal(map.status, 200);
+        assert.deepEqual(Buffer.from(await map.arrayBuffer()), packed.subarray(offset, offset + length));
+        assert.equal((await fetch(new URL("vendor/cmaps/nonexistent.bcmap", base))).status, 404);
         const version = state.version;
         assert.equal(reader.getSelection(), null);
         const range = await fetch(new URL("pdf", base), { headers: { Range: "bytes=0-7" } });
