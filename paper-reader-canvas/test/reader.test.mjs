@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { brotliDecompressSync } from "node:zlib";
 import { createReaderServer, translationPrompt } from "../server.mjs";
 import * as pdfjs from "../vendor/pdf.min.mjs";
+import { textContentFor } from "../web/text-content.mjs";
 
 const workerParts = [
     new URL("../vendor/pdf.worker.min.mjs.part1", import.meta.url),
@@ -46,11 +47,35 @@ test("vendored PDF.js extracts selectable English text without network access", 
     try {
         const pdf = await task.promise;
         assert.equal(pdf.numPages, 1);
-        const content = await (await pdf.getPage(1)).getTextContent();
+        const content = await textContentFor(await pdf.getPage(1));
         assert.ok(content.items.some((item) => item.str === "neural prosthesis"));
     } finally {
         await task.destroy();
     }
+});
+
+test("text layer reads a stream without an async iterator (WebKit)", async () => {
+    let index = 0;
+    let released = false;
+    const chunks = [
+        { lang: "en", styles: { F1: { fontFamily: "serif" } }, items: [{ str: "neural" }] },
+        { styles: { F2: { fontFamily: "sans-serif" } }, items: [{ str: " prosthesis" }] },
+    ];
+    const page = {
+        streamTextContent: () => ({
+            getReader: () => ({
+                read: async () => index < chunks.length
+                    ? { done: false, value: chunks[index++] }
+                    : { done: true },
+                releaseLock: () => { released = true; },
+            }),
+        }),
+    };
+    const content = await textContentFor(page);
+    assert.deepEqual(content.items.map(({ str }) => str), ["neural", " prosthesis"]);
+    assert.deepEqual(Object.keys(content.styles), ["F1", "F2"]);
+    assert.equal(content.lang, "en");
+    assert.equal(released, true);
 });
 
 test("reads local PDF ranges and sends only the selected words and context", async () => {

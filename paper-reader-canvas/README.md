@@ -33,6 +33,7 @@ The canvas also exposes `open_document` to let Copilot switch the PDF without cl
 - Scanned/image-only PDFs have no selectable text; OCR is not included.
 - The current selection is transient and clears when a different PDF is opened or the extension restarts. A PDF chosen through the file picker needs to be chosen again after a reload.
 - Canvas APIs are experimental; a future Copilot app release may require updates.
+- The text layer reads PDF.js's text stream through `getReader()` because the macOS app's WebKit does not implement the stream's async iterator used by `getTextContent()`.
 
 ## Development
 

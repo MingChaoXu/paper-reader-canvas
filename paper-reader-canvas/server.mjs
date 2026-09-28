@@ -13,6 +13,7 @@ let cmaps;
 const assets = new Map([
     ["/", ["web/index.html", "text/html; charset=utf-8"]],
     ["/app.mjs", ["web/app.mjs", "text/javascript; charset=utf-8"]],
+    ["/text-content.mjs", ["web/text-content.mjs", "text/javascript; charset=utf-8"]],
     ["/style.css", ["web/style.css", "text/css; charset=utf-8"]],
     ["/vendor/pdf.min.mjs", ["vendor/pdf.min.mjs", "text/javascript; charset=utf-8"]],
     ["/vendor/pdf.worker.min.mjs", [["vendor/pdf.worker.min.mjs.part1", "vendor/pdf.worker.min.mjs.part2"], "text/javascript; charset=utf-8"]],

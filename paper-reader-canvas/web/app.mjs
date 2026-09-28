@@ -1,4 +1,5 @@
 import * as pdfjs from "./vendor/pdf.min.mjs";
+import { textContentFor } from "./text-content.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -101,9 +102,11 @@ async function renderPages() {
 
     async function draw(pageElement) {
         const pageNumber = Number(pageElement.dataset.page);
+        let stage = "load page";
         try {
             const page = await pdf.getPage(pageNumber);
             if (run !== generation) return;
+            stage = "prepare viewport";
             const viewport = page.getViewport({ scale });
             pageElement.style.width = `${viewport.width}px`;
             pageElement.style.height = `${viewport.height}px`;
@@ -115,6 +118,7 @@ async function renderPages() {
             canvas.style.width = `${viewport.width}px`;
             canvas.style.height = `${viewport.height}px`;
             pageElement.append(canvas);
+            stage = "render page image";
             await page.render({
                 canvasContext: canvas.getContext("2d"),
                 viewport,
@@ -126,15 +130,18 @@ async function renderPages() {
             layer.style.setProperty("--scale-factor", scale);
             layer.style.setProperty("--total-scale-factor", scale);
             pageElement.append(layer);
+            stage = "get text";
+            const textContent = await textContentFor(page);
+            stage = "render text layer";
             await new pdfjs.TextLayer({
-                textContentSource: await page.getTextContent(),
+                textContentSource: textContent,
                 container: layer,
                 viewport,
             }).render();
         } catch (error) {
             if (run !== generation) return;
-            pageElement.textContent = `第 ${pageNumber} 页渲染失败：${error.message}`;
-            status(`第 ${pageNumber} 页渲染失败：${error.message}`, true);
+            pageElement.textContent = `第 ${pageNumber} 页渲染失败（${stage}）：${error.message}`;
+            status(`第 ${pageNumber} 页渲染失败（${stage}）：${error.message}`, true);
         }
     }
 
