@@ -1,0 +1,12 @@
+{
+  "name": "paper-reader-canvas",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "vendor": "node scripts/vendor.mjs"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.3.289"
+  }
+}

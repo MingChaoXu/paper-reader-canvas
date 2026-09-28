@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paper Reader</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <header>
+    <div class="heading">
+      <div>
+        <h1>Paper Reader</h1>
+        <p id="document-name">在侧栏阅读 PDF，划词后询问 Copilot</p>
+      </div>
+      <div class="zoom" aria-label="页面缩放">
+        <button id="zoom-out" type="button" aria-label="缩小">−</button>
+        <span id="zoom-label">100%</span>
+        <button id="zoom-in" type="button" aria-label="放大">+</button>
+      </div>
+    </div>
+    <form id="path-form">
+      <label for="path">本地 PDF 路径（相对于当前项目，或绝对路径）</label>
+      <div class="path-row">
+        <input id="path" name="path" placeholder="doc/paper.pdf" autocomplete="off">
+        <button type="submit">打开</button>
+      </div>
+    </form>
+    <div class="file-row">
+      <label class="file-button" for="file">或选择本机 PDF</label>
+      <input id="file" type="file" accept=".pdf,application/pdf">
+      <span id="page-count"></span>
+    </div>
+  </header>
+  <main id="viewer" aria-label="PDF 阅读区">
+    <div id="empty">输入 PDF 路径，或从本机选择文件。论文仅在本机显示；只有选中的文字会发往 Copilot。</div>
+  </main>
+  <footer>
+    <p id="selection-label">尚未选中文字</p>
+    <div id="selection-preview" aria-live="polite">划选论文中的英文单词、句子或段落。</div>
+    <button id="translate" type="button" disabled>翻译选中内容</button>
+    <p id="status" role="status" aria-live="polite">划词后也可以在会话里说“翻译刚选中的文字”。</p>
+  </footer>
+</body>
+</html>
