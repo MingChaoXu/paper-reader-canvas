@@ -13,7 +13,7 @@ const assets = new Map([
     ["/app.mjs", ["web/app.mjs", "text/javascript; charset=utf-8"]],
     ["/style.css", ["web/style.css", "text/css; charset=utf-8"]],
     ["/vendor/pdf.min.mjs", ["vendor/pdf.min.mjs", "text/javascript; charset=utf-8"]],
-    ["/vendor/pdf.worker.min.mjs", ["vendor/pdf.worker.min.mjs", "text/javascript; charset=utf-8"]],
+    ["/vendor/pdf.worker.min.mjs", [["vendor/pdf.worker.min.mjs.part1", "vendor/pdf.worker.min.mjs.part2"], "text/javascript; charset=utf-8"]],
     ["/vendor/pdf_viewer.css", ["vendor/pdf_viewer.css", "text/css; charset=utf-8"]],
 ]);
 
@@ -229,7 +229,9 @@ export async function createReaderServer({ workspaceRoot, initialPath, send }) {
                     asset = [route.slice(1), route.endsWith(".wasm") ? "application/wasm" : "application/octet-stream"];
                 }
                 if (!asset) throw new ReaderError("not_found", "Not found.", 404);
-                const bytes = await readFile(join(root, asset[0]));
+                const bytes = Array.isArray(asset[0])
+                    ? Buffer.concat(await Promise.all(asset[0].map((file) => readFile(join(root, file)))))
+                    : await readFile(join(root, asset[0]));
                 response.writeHead(200, { "Content-Type": asset[1] });
                 response.end(bytes);
             } else {

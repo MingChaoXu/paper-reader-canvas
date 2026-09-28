@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createReaderServer, translationPrompt } from "../server.mjs";
 import * as pdfjs from "../vendor/pdf.min.mjs";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.min.mjs", import.meta.url).href;
+const workerParts = [
+    new URL("../vendor/pdf.worker.min.mjs.part1", import.meta.url),
+    new URL("../vendor/pdf.worker.min.mjs.part2", import.meta.url),
+];
+pdfjs.GlobalWorkerOptions.workerSrc = `data:text/javascript;base64,${Buffer.concat(
+    await Promise.all(workerParts.map(async (url) => readFile(url))),
+).toString("base64")}`;
 
 function samplePdf(text) {
     const objects = [
@@ -67,6 +73,9 @@ test("reads local PDF ranges and sends only the selected words and context", asy
 
         const state = await (await fetch(new URL("state", base))).json();
         assert.equal(state.document.name, "paper.pdf");
+        const servedWorker = Buffer.from(await (await fetch(new URL("vendor/pdf.worker.min.mjs", base))).arrayBuffer());
+        const sourceWorker = Buffer.concat(await Promise.all(workerParts.map((url) => readFile(url))));
+        assert.deepEqual(servedWorker, sourceWorker);
         const version = state.version;
         assert.equal(reader.getSelection(), null);
         const range = await fetch(new URL("pdf", base), { headers: { Range: "bytes=0-7" } });
