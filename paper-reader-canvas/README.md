@@ -22,6 +22,8 @@ Open Paper Reader with doc/paper.pdf
 
 You can also paste an absolute or project-relative `.pdf` path into the canvas, or use **选择本机 PDF** for a file outside the project. File-picker PDFs stay in the browser's memory and must be selected again after a reload.
 
+Scroll the mouse wheel over the PDF to zoom in or out around the pointer. Hold **Shift** while scrolling to move through pages instead; the **− / +** buttons zoom around the center of the reading area.
+
 Select text in the rendered page. The extension stores the selected text, page number, and nearby context in the running canvas; its `get_selection` action lets the agent read it when you ask, e.g. “翻译我刚划选的单词”. For immediate translation, click **翻译选中内容**. Selecting text alone never starts a model request. To avoid accidental huge prompts, selections over 12,000 characters are rejected.
 
 The canvas also exposes `open_document` to switch the PDF without closing the panel. The current PDF path can be absolute or relative to the session's project directory.

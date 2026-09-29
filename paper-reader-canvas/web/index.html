@@ -14,7 +14,7 @@
         <h1>Paper Reader</h1>
         <p id="document-name">在侧栏阅读 PDF，划词后询问 Copilot</p>
       </div>
-      <div class="zoom" aria-label="页面缩放">
+      <div class="zoom" aria-label="页面缩放" title="滚轮缩放；Shift + 滚轮翻页">
         <button id="zoom-out" type="button" aria-label="缩小">−</button>
         <span id="zoom-label">100%</span>
         <button id="zoom-in" type="button" aria-label="放大">+</button>
@@ -30,6 +30,7 @@
     <div class="file-row">
       <label class="file-button" for="file">或选择本机 PDF</label>
       <input id="file" type="file" accept=".pdf,application/pdf">
+      <span class="wheel-hint">滚轮缩放 · Shift+滚轮翻页</span>
       <span id="page-count"></span>
     </div>
   </header>

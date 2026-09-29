@@ -1,5 +1,6 @@
 import * as pdfjs from "./vendor/pdf.min.mjs";
 import { textContentFor } from "./text-content.mjs";
+import { maxZoom, minZoom, pageAnchor, restoreAnchor, wheelPixels, wheelZoom } from "./zoom.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -19,6 +20,9 @@ let pdf;
 let activeSource;
 let generation = 0;
 let zoom = 1;
+let zoomFrame;
+let lastZoomAnchor;
+const pageMetrics = new Map();
 let observer;
 let selectionUpdate = Promise.resolve();
 let selectionReady = false;
@@ -60,6 +64,10 @@ function showDocument(name, pages) {
 
 async function stopDocument() {
     generation++;
+    if (zoomFrame) cancelAnimationFrame(zoomFrame);
+    zoomFrame = undefined;
+    lastZoomAnchor = null;
+    pageMetrics.clear();
     observer?.disconnect();
     observer = undefined;
     const previous = loadingTask;
@@ -87,16 +95,32 @@ async function displayDocument(source, label) {
     }
 }
 
-async function renderPages() {
+function centerAnchor() {
+    const rect = viewer.getBoundingClientRect();
+    return pageAnchor(viewer, rect.left + viewer.clientWidth / 2, rect.top + viewer.clientHeight / 2)
+        ?? lastZoomAnchor;
+}
+
+function scheduleZoomRender(anchor) {
+    if (anchor) lastZoomAnchor = anchor;
+    if (zoomFrame) return;
+    zoomFrame = requestAnimationFrame(() => {
+        zoomFrame = undefined;
+        renderPages(lastZoomAnchor).catch((error) => status(`缩放失败：${error.message}`, true));
+    });
+}
+
+async function renderPages(anchor = centerAnchor()) {
     if (!pdf) return;
     const run = ++generation;
     observer?.disconnect();
     viewer.replaceChildren();
     const first = await pdf.getPage(1);
     if (run !== generation) return;
-    const fit = (viewer.clientWidth - 40) / first.getViewport({ scale: 1 }).width;
+    const base = first.getViewport({ scale: 1 });
+    pageMetrics.set(1, { width: base.width, height: base.height });
+    const fit = (viewer.clientWidth - 40) / base.width;
     const scale = Math.max(0.3, Math.min(fit, 2) * zoom);
-    const initial = first.getViewport({ scale });
     const queue = [];
     let inFlight = 0;
 
@@ -108,8 +132,10 @@ async function renderPages() {
             if (run !== generation) return;
             stage = "prepare viewport";
             const viewport = page.getViewport({ scale });
+            pageMetrics.set(pageNumber, { width: viewport.width / scale, height: viewport.height / scale });
             pageElement.style.width = `${viewport.width}px`;
             pageElement.style.height = `${viewport.height}px`;
+            if (anchor && pageNumber === anchor.number) restoreAnchor(viewer, anchor);
             pageElement.replaceChildren();
             const canvas = document.createElement("canvas");
             const ratio = Math.min(devicePixelRatio || 1, 2);
@@ -168,8 +194,9 @@ async function renderPages() {
         element.className = "paper-page";
         element.dataset.page = String(page);
         element.setAttribute("aria-label", `第 ${page} 页`);
-        element.style.width = `${initial.width}px`;
-        element.style.height = `${initial.height}px`;
+        const size = pageMetrics.get(page) ?? pageMetrics.get(1);
+        element.style.width = `${size.width * scale}px`;
+        element.style.height = `${size.height * scale}px`;
         const placeholder = document.createElement("div");
         placeholder.className = "page-placeholder";
         placeholder.textContent = `第 ${page} 页`;
@@ -177,6 +204,7 @@ async function renderPages() {
         fragment.append(element);
     }
     viewer.append(fragment);
+    restoreAnchor(viewer, anchor);
     for (const element of viewer.querySelectorAll(".paper-page")) observer.observe(element);
 }
 
@@ -286,6 +314,23 @@ $("#file").addEventListener("change", async (event) => {
 
 viewer.addEventListener("pointerup", captureSelection);
 viewer.addEventListener("keyup", captureSelection);
+viewer.addEventListener("wheel", (event) => {
+    if (!pdf || (!event.shiftKey && !event.deltaY)) return;
+    event.preventDefault();
+    const delta = wheelPixels(event, viewer.clientHeight);
+    if (event.shiftKey) {
+        viewer.scrollTop += delta;
+        return;
+    }
+    if (!delta) return;
+    const next = wheelZoom(zoom, delta);
+    if (next === zoom) return;
+    const anchor = pageAnchor(viewer, event.clientX, event.clientY) ?? lastZoomAnchor;
+    zoom = next;
+    $("#zoom-label").textContent = `${Math.round(zoom * 100)}%`;
+    scheduleZoomRender(anchor);
+}, { passive: false });
+
 translateButton.addEventListener("click", async () => {
     await selectionUpdate;
     if (!selectionReady) return;
@@ -301,10 +346,11 @@ translateButton.addEventListener("click", async () => {
 });
 
 for (const [id, factor] of [["zoom-in", 1.2], ["zoom-out", 1 / 1.2]]) {
-    $(`#${id}`).addEventListener("click", async () => {
-        zoom = Math.max(0.5, Math.min(3, zoom * factor));
+    $(`#${id}`).addEventListener("click", () => {
+        const anchor = centerAnchor();
+        zoom = Math.max(minZoom, Math.min(maxZoom, zoom * factor));
         $("#zoom-label").textContent = `${Math.round(zoom * 100)}%`;
-        await renderPages();
+        scheduleZoomRender(anchor);
     });
 }
 

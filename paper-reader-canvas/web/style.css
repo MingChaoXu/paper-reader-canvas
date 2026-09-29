@@ -62,8 +62,9 @@ button:focus-visible, input:focus-visible, .file-button:focus-visible {
   outline-offset: 2px;
 }
 
-.file-row { margin-top: 8px; justify-content: space-between; color: var(--text-color-muted, #57606a); }
+.file-row { margin-top: 8px; justify-content: space-between; flex-wrap: wrap; color: var(--text-color-muted, #57606a); }
 .file-button { display: inline-block; padding: 4px 9px; }
+.wheel-hint { font-size: 12px; }
 #file { position: absolute; width: 1px; height: 1px; opacity: 0; }
 
 #viewer {
