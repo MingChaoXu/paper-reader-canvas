@@ -1,6 +1,7 @@
 import * as pdfjs from "./vendor/pdf.min.mjs";
 import { textContentFor } from "./text-content.mjs";
 import { enableRightDragPan } from "./pan.mjs";
+import { monitorConnection } from "./connection.mjs";
 import { maxZoom, minZoom, pageAnchor, restoreAnchor, wheelPixels, wheelZoom } from "./zoom.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
@@ -213,6 +214,11 @@ async function refreshDocument() {
     const { document: source, workspaceRoot, version } = await request("state");
     $("#path").placeholder = `${workspaceRoot}/paper.pdf`;
     if (source?.kind === "browser") {
+        if (activeSource === `browser:${source.name}` && pdf && documentVersion === version) return;
+        if (pdf) {
+            await stopDocument();
+            viewer.replaceChildren();
+        }
         const reset = await request("reset-browser-file", "POST", {});
         documentVersion = reset.version;
         activeSource = undefined;
@@ -366,6 +372,24 @@ new ResizeObserver(() => {
 }).observe(viewer);
 
 const events = new EventSource("./events");
-events.addEventListener("document", () => refreshDocument().catch((error) => status(error.message, true)));
-events.addEventListener("error", () => status("阅读器连接已中断；请重新打开 Canvas。", true));
+let connectionMessage;
+monitorConnection(events, {
+    onDocument: () => refreshDocument().catch((error) => status(`刷新文档失败：${error.message}`, true)),
+    onStatus: (message, error) => {
+        connectionMessage = message;
+        status(message, error);
+    },
+    onReconnect: async () => {
+        const previous = connectionMessage;
+        connectionMessage = null;
+        try {
+            await refreshDocument();
+            if ($("#status").textContent === previous) {
+                status(selectionReady ? "选区已同步；可直接在会话里提问，或点击翻译。" : "阅读器已恢复连接。");
+            }
+        } catch (error) {
+            status(`重连后同步失败：${error.message}`, true);
+        }
+    },
+});
 refreshDocument().catch((error) => status(`阅读器初始化失败：${error.message}`, true));

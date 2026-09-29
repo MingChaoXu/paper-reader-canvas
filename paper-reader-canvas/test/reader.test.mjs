@@ -152,9 +152,47 @@ test("invalid PDF paths fail clearly and quoted document text stays data", async
             text: "dendritic cells",
             context: "activated dendritic cells",
         });
+
         assert.match(prompt, /第|页码：3/);
         assert.match(prompt, /dendritic cells/);
     } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
+test("SSE keeps document listeners alive and sends retry and heartbeat frames", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paper-reader-events-"));
+    await writeFile(join(dir, "paper.pdf"), samplePdf("neural prosthesis"));
+    const reader = await createReaderServer({
+        workspaceRoot: dir,
+        send: async () => "id",
+        heartbeatMs: 30,
+    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    try {
+        const response = await fetch(new URL("events", reader.url), { signal: controller.signal });
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get("content-type"), /text\/event-stream/);
+        const stream = response.body.getReader();
+        let frames = "";
+        while (!frames.includes(": heartbeat")) {
+            const { done, value } = await stream.read();
+            assert.equal(done, false);
+            frames += new TextDecoder().decode(value);
+        }
+        assert.match(frames, /retry: 1500/);
+        await reader.openDocument("paper.pdf");
+        while (!frames.includes("event: document")) {
+            const { done, value } = await stream.read();
+            assert.equal(done, false);
+            frames += new TextDecoder().decode(value);
+        }
+        assert.match(frames, /event: document\ndata: changed/);
+    } finally {
+        controller.abort();
+        clearTimeout(timeout);
+        await reader.close();
         await rm(dir, { recursive: true, force: true });
     }
 });

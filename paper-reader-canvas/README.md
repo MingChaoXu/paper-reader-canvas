@@ -40,6 +40,7 @@ The PDF renderer, local server, and selection handling can be reused by other ag
 - The GitHub repository contains only extension source and PDF.js assets; do not commit papers or personal data.
 - Scanned/image-only PDFs have no selectable text; OCR is not included.
 - The current selection is transient and clears when a different PDF is opened or the extension restarts. A PDF chosen through the file picker needs to be chosen again after a reload.
+- Temporary connection loss after waking from sleep is retried automatically without reopening the canvas. If the extension process has stopped and its loopback address no longer works, reopen the canvas to get a new address.
 - Canvas APIs are experimental; a future Copilot app release may require updates.
 - The text layer reads PDF.js's text stream through `getReader()` because the macOS app's WebKit does not implement the stream's async iterator used by `getTextContent()`.
 

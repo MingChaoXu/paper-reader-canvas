@@ -16,6 +16,7 @@ const assets = new Map([
     ["/text-content.mjs", ["web/text-content.mjs", "text/javascript; charset=utf-8"]],
     ["/zoom.mjs", ["web/zoom.mjs", "text/javascript; charset=utf-8"]],
     ["/pan.mjs", ["web/pan.mjs", "text/javascript; charset=utf-8"]],
+    ["/connection.mjs", ["web/connection.mjs", "text/javascript; charset=utf-8"]],
     ["/style.css", ["web/style.css", "text/css; charset=utf-8"]],
     ["/vendor/pdf.min.mjs", ["vendor/pdf.min.mjs", "text/javascript; charset=utf-8"]],
     ["/vendor/pdf.worker.min.mjs", [["vendor/pdf.worker.min.mjs.part1", "vendor/pdf.worker.min.mjs.part2"], "text/javascript; charset=utf-8"]],
@@ -106,7 +107,7 @@ function byteRange(header, size) {
     return { start, end };
 }
 
-export async function createReaderServer({ workspaceRoot, initialPath, send }) {
+export async function createReaderServer({ workspaceRoot, initialPath, send, heartbeatMs = 15_000 }) {
     const state = { document: null, selection: null, version: 0 };
     const listeners = new Set();
     const token = randomBytes(24).toString("hex");
@@ -175,9 +176,13 @@ export async function createReaderServer({ workspaceRoot, initialPath, send }) {
                 await handlePdf(request, response);
             } else if (request.method === "GET" && route === "/events") {
                 response.writeHead(200, { "Content-Type": "text/event-stream", Connection: "keep-alive" });
-                response.write(": connected\n\n");
+                response.write("retry: 1500\n: connected\n\n");
                 listeners.add(response);
-                request.on("close", () => listeners.delete(response));
+                const heartbeat = setInterval(() => response.write(": heartbeat\n\n"), heartbeatMs);
+                response.on("close", () => {
+                    clearInterval(heartbeat);
+                    listeners.delete(response);
+                });
             } else if (request.method === "POST" && route === "/open") {
                 const body = await jsonBody(request);
                 sendJson(response, 200, { document: await openDocument(body.path) });
