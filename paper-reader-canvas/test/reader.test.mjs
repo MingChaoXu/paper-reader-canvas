@@ -99,6 +99,14 @@ test("reads local PDF ranges and sends only the selected words and context", asy
 
         const state = await (await fetch(new URL("state", base))).json();
         assert.equal(state.document.name, "paper.pdf");
+        const indexHtml = await (await fetch(base)).text();
+        const polyfillScript = indexHtml.indexOf('src="./polyfills.mjs"');
+        assert.ok(polyfillScript >= 0 && polyfillScript < indexHtml.indexOf('src="./app.mjs"'));
+        for (const asset of ["polyfills.mjs", "selection.mjs"]) {
+            const response = await fetch(new URL(asset, base));
+            assert.equal(response.status, 200);
+            assert.match(response.headers.get("content-type"), /text\/javascript/);
+        }
         const servedWorker = Buffer.from(await (await fetch(new URL("vendor/pdf.worker.min.mjs", base))).arrayBuffer());
         const sourceWorker = Buffer.concat(await Promise.all(workerParts.map((url) => readFile(url))));
         assert.deepEqual(servedWorker, sourceWorker);

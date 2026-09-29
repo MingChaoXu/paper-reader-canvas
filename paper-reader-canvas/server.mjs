@@ -13,6 +13,8 @@ let cmaps;
 const assets = new Map([
     ["/", ["web/index.html", "text/html; charset=utf-8"]],
     ["/app.mjs", ["web/app.mjs", "text/javascript; charset=utf-8"]],
+    ["/polyfills.mjs", ["web/polyfills.mjs", "text/javascript; charset=utf-8"]],
+    ["/selection.mjs", ["web/selection.mjs", "text/javascript; charset=utf-8"]],
     ["/text-content.mjs", ["web/text-content.mjs", "text/javascript; charset=utf-8"]],
     ["/zoom.mjs", ["web/zoom.mjs", "text/javascript; charset=utf-8"]],
     ["/pan.mjs", ["web/pan.mjs", "text/javascript; charset=utf-8"]],

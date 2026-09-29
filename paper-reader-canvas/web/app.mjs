@@ -2,6 +2,7 @@ import * as pdfjs from "./vendor/pdf.min.mjs";
 import { textContentFor } from "./text-content.mjs";
 import { enableRightDragPan } from "./pan.mjs";
 import { monitorConnection } from "./connection.mjs";
+import { attachGlyphRuns, correctSelectionRange, glyphRunsFor } from "./selection.mjs";
 import { maxZoom, minZoom, pageAnchor, restoreAnchor, wheelPixels, wheelZoom } from "./zoom.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
@@ -28,6 +29,7 @@ const pageMetrics = new Map();
 let observer;
 let selectionUpdate = Promise.resolve();
 let selectionReady = false;
+let selectionFrame;
 let documentVersion = 0;
 
 function status(message, error = false) {
@@ -161,11 +163,22 @@ async function renderPages(anchor = centerAnchor()) {
             stage = "get text";
             const textContent = await textContentFor(page);
             stage = "render text layer";
-            await new pdfjs.TextLayer({
+            const textLayer = new pdfjs.TextLayer({
                 textContentSource: textContent,
                 container: layer,
                 viewport,
-            }).render();
+            });
+            await textLayer.render();
+            try {
+                const operatorList = await page.getOperatorList();
+                if (run !== generation) return;
+                const runs = glyphRunsFor(operatorList, pdfjs.OPS);
+                layer.dataset.selectionRuns = `${attachGlyphRuns(textLayer, runs, textContent.items, viewport.scale * viewport.userUnit)}/${runs.length}`;
+            } catch (error) {
+                if (run !== generation) return;
+                layer.dataset.selectionError = error.message;
+                status(`第 ${pageNumber} 页选区校准失败：${error.message}`, true);
+            }
         } catch (error) {
             if (run !== generation) return;
             pageElement.textContent = `第 ${pageNumber} 页渲染失败（${stage}）：${error.message}`;
@@ -250,20 +263,38 @@ function surroundingText(range, layer, text) {
     return `${prefix}【${text.slice(0, 180)}】${suffix}`;
 }
 
+function rejectSelection(message) {
+    const version = documentVersion;
+    clearSelection();
+    selectionUpdate = selectionUpdate.then(() => request("selection", "POST", { text: null, version }))
+        .catch((error) => status(`清除选区失败：${error.message}`, true));
+    status(message, true);
+}
+
 function captureSelection() {
     const selection = window.getSelection();
-    const text = selection?.toString().trim() || "";
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const nativeRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    let range = nativeRange;
+    if (nativeRange) {
+        try {
+            range = correctSelectionRange(nativeRange);
+        } catch (error) {
+            rejectSelection(`选区校准失败：${error.message}`);
+            return;
+        }
+    }
+    const text = range?.toString().trim() || "";
     const start = range?.startContainer.nodeType === Node.TEXT_NODE
         ? range.startContainer.parentElement : range?.startContainer;
     const layer = start?.closest?.(".textLayer");
     if (text && !layer) return;
     const version = documentVersion;
+    if (text && layer.dataset.selectionError) {
+        rejectSelection(`此页选区校准失败：${layer.dataset.selectionError}`);
+        return;
+    }
     if (text.length > 12_000) {
-        clearSelection();
-        selectionUpdate = selectionUpdate.then(() => request("selection", "POST", { text: null, version }))
-            .catch((error) => status(`清除选区失败：${error.message}`, true));
-        status("一次最多划选 12,000 个字符，请缩小选区。", true);
+        rejectSelection("一次最多划选 12,000 个字符，请缩小选区。");
         return;
     }
     const page = layer?.closest(".paper-page");
@@ -281,6 +312,14 @@ function captureSelection() {
             status("选区已同步；可直接在会话里提问，或点击翻译。");
         }
     }).catch((error) => status(`同步选区失败：${error.message}`, true));
+}
+
+function scheduleSelectionCapture() {
+    if (selectionFrame) cancelAnimationFrame(selectionFrame);
+    selectionFrame = requestAnimationFrame(() => {
+        selectionFrame = undefined;
+        captureSelection();
+    });
 }
 
 $("#path-form").addEventListener("submit", async (event) => {
@@ -321,9 +360,9 @@ $("#file").addEventListener("change", async (event) => {
 
 enableRightDragPan(viewer, () => !!pdf);
 viewer.addEventListener("pointerup", (event) => {
-    if (event.button === 0) captureSelection();
+    if (event.button === 0) scheduleSelectionCapture();
 });
-viewer.addEventListener("keyup", captureSelection);
+viewer.addEventListener("keyup", scheduleSelectionCapture);
 viewer.addEventListener("wheel", (event) => {
     if (!pdf || (!event.shiftKey && !event.deltaY)) return;
     event.preventDefault();
