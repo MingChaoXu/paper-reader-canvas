@@ -4,10 +4,12 @@ import { enableRightDragPan } from "../web/pan.mjs";
 
 function reader() {
     const viewer = new EventTarget();
+    const window = new EventTarget();
     const captured = new Set();
     const classes = new Set();
     viewer.scrollLeft = 40;
     viewer.scrollTop = 200;
+    viewer.ownerDocument = { defaultView: window };
     viewer.classList = {
         add: (name) => classes.add(name),
         remove: (name) => classes.delete(name),
@@ -22,14 +24,14 @@ function reader() {
         viewer.dispatchEvent(event);
         return event.defaultPrevented;
     }
-    return { viewer, emit };
+    return { viewer, window, emit };
 }
 
-test("right-button drag pans both axes and releases capture on pointerup", () => {
+test("right-button drag pans both axes without capturing the pointer", () => {
     const { viewer, emit } = reader();
     enableRightDragPan(viewer, () => true);
     assert.equal(emit("pointerdown", { button: 2, pointerId: 7, clientX: 150, clientY: 150 }), true);
-    assert.equal(viewer.hasPointerCapture(7), true);
+    assert.equal(viewer.hasPointerCapture(7), false);
     emit("pointermove", { pointerId: 7, buttons: 2, clientX: 148, clientY: 150 });
     assert.equal(viewer.scrollLeft, 40);
     assert.equal(viewer.classList.contains("panning"), false);
@@ -40,6 +42,25 @@ test("right-button drag pans both axes and releases capture on pointerup", () =>
     emit("pointerup", { pointerId: 7, button: 2 });
     assert.equal(viewer.hasPointerCapture(7), false);
     assert.equal(viewer.classList.contains("panning"), false);
+});
+
+test("leaving the canvas or switching windows ends pan without blocking other controls", () => {
+    const { viewer, window, emit } = reader();
+    enableRightDragPan(viewer, () => true);
+    emit("pointerdown", { button: 2, pointerId: 7, clientX: 150, clientY: 150 });
+    emit("pointermove", { pointerId: 7, buttons: 2, clientX: 80, clientY: 100 });
+    assert.equal(viewer.classList.contains("panning"), true);
+    emit("pointerleave", { pointerId: 7 });
+    assert.equal(viewer.classList.contains("panning"), false);
+    assert.equal(viewer.hasPointerCapture(7), false);
+    assert.equal(emit("pointermove", { pointerId: 7, buttons: 2, clientX: 70, clientY: 80 }), false);
+    assert.equal(viewer.scrollTop, 250);
+
+    emit("pointerdown", { button: 2, pointerId: 8, clientX: 150, clientY: 150 });
+    emit("pointermove", { pointerId: 8, buttons: 2, clientX: 80, clientY: 100 });
+    window.dispatchEvent(new Event("blur"));
+    assert.equal(viewer.classList.contains("panning"), false);
+    assert.equal(viewer.hasPointerCapture(8), false);
 });
 
 test("left selection is untouched and pan cancels if the right button is released", () => {

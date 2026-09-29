@@ -24,7 +24,7 @@ You can also paste an absolute or project-relative `.pdf` path into the canvas, 
 
 Scroll the mouse wheel over the PDF to zoom in or out around the pointer. Hold **Shift** while scrolling to move through pages instead; the **− / +** buttons zoom around the center of the reading area.
 
-Drag with the **right mouse button** to pan the page horizontally or vertically. Left-button text selection still works. The native context menu is disabled inside the PDF reading area so it does not interrupt right-button dragging.
+Drag with the **right mouse button** to pan the page horizontally or vertically. Panning ends when the pointer leaves the reading area or the window loses focus, so it does not capture clicks elsewhere in the app. Left-button text selection still works. The native context menu is disabled inside the PDF reading area so it does not interrupt right-button dragging.
 
 Select text in the rendered page. The extension stores the selected text, page number, and nearby context in the running canvas; its `get_selection` action lets the agent read it when you ask, e.g. “翻译我刚划选的单词”. For immediate translation, click **翻译选中内容**. Selecting text alone never starts a model request. To avoid accidental huge prompts, selections over 12,000 characters are rejected.
 
