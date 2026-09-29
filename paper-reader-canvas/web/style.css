@@ -76,6 +76,12 @@ button:focus-visible, input:focus-visible, .file-button:focus-visible {
   background: var(--background-color-muted, #f6f8fa);
 }
 
+#viewer.panning, #viewer.panning * { cursor: grabbing !important; }
+#viewer.panning .textLayer :is(span, br) {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 #empty {
   max-width: 440px;
   margin: 25vh auto 0;

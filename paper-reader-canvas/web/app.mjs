@@ -1,5 +1,6 @@
 import * as pdfjs from "./vendor/pdf.min.mjs";
 import { textContentFor } from "./text-content.mjs";
+import { enableRightDragPan } from "./pan.mjs";
 import { maxZoom, minZoom, pageAnchor, restoreAnchor, wheelPixels, wheelZoom } from "./zoom.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
@@ -312,7 +313,10 @@ $("#file").addEventListener("change", async (event) => {
     }
 });
 
-viewer.addEventListener("pointerup", captureSelection);
+enableRightDragPan(viewer, () => !!pdf);
+viewer.addEventListener("pointerup", (event) => {
+    if (event.button === 0) captureSelection();
+});
 viewer.addEventListener("keyup", captureSelection);
 viewer.addEventListener("wheel", (event) => {
     if (!pdf || (!event.shiftKey && !event.deltaY)) return;

@@ -16,6 +16,8 @@ https://github.com/MingChaoXu/paper-reader-canvas/tree/main/paper-reader-canvas
 
 在 PDF 上滚动鼠标滚轮，可围绕鼠标位置放大或缩小；按住 **Shift** 滚轮翻页。顶部 **− / +** 按钮则以阅读区中心缩放。
 
+按住**鼠标右键拖动**可向上下左右平移页面，左键仍可划词。阅读区内会禁用原生右键菜单，避免打断拖动。
+
 阅读器的 PDF 渲染和划词逻辑可以复用到其他 AI 工具。Codex 支持通过 MCP 接入本地工具，但本仓库**尚未提供 Codex/MCP 适配器**，不能直接将此 Canvas 扩展安装到 Codex。
 
 PDF 不会由扩展上传到外部服务；点击翻译或主动询问选区时，仅选中的文字和少量邻近上下文进入当前 AI 会话。完整使用说明、隐私说明、开发和许可信息请阅读 [扩展文档](paper-reader-canvas/README.md)。
