@@ -2,8 +2,7 @@ export function enableRightDragPan(viewer, canPan) {
     let drag;
 
     function finish(event) {
-        if (!drag || event.pointerId !== drag.pointerId) return;
-        if (viewer.hasPointerCapture(event.pointerId)) viewer.releasePointerCapture(event.pointerId);
+        if (!drag || (event?.pointerId != null && event.pointerId !== drag.pointerId)) return;
         viewer.classList.remove("panning");
         drag = null;
     }
@@ -18,7 +17,6 @@ export function enableRightDragPan(viewer, canPan) {
             top: viewer.scrollTop,
             moved: false,
         };
-        viewer.setPointerCapture(event.pointerId);
         event.preventDefault();
     });
 
@@ -40,11 +38,8 @@ export function enableRightDragPan(viewer, canPan) {
 
     viewer.addEventListener("pointerup", finish);
     viewer.addEventListener("pointercancel", finish);
-    viewer.addEventListener("lostpointercapture", (event) => {
-        if (drag?.pointerId !== event.pointerId) return;
-        viewer.classList.remove("panning");
-        drag = null;
-    });
+    viewer.addEventListener("pointerleave", finish);
+    viewer.ownerDocument.defaultView.addEventListener("blur", () => finish());
     viewer.addEventListener("contextmenu", (event) => {
         if (canPan()) event.preventDefault();
     });
