@@ -17,8 +17,9 @@ function glyphRun(values) {
         }
     }
     const joined = text.join("");
-    const trimmed = joined.trimEnd();
-    return { text: trimmed, advances: advances.slice(0, trimmed.length) };
+    const leading = joined.length - joined.trimStart().length;
+    const trimmed = joined.trim();
+    return { text: trimmed, advances: advances.slice(leading, leading + trimmed.length) };
 }
 
 export function glyphRunsFor(operatorList, ops) {
