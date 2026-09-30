@@ -28,7 +28,7 @@ Drag with the **right mouse button** to pan the page horizontally or vertically.
 
 Select text in the rendered page. The extension stores the selected text, page number, and nearby context in the running canvas; its `get_selection` action lets the agent read it when you ask, e.g. “翻译我刚划选的单词”. For immediate translation, click **翻译选中内容**. Selecting text alone never starts a model request. To avoid accidental huge prompts, selections over 12,000 characters are rejected.
 
-For PDFs whose embedded fonts differ from the browser's fallback fonts, selectable words are positioned using the PDF's own line and glyph widths so the highlighted text matches the page image. If a page's selection cannot be calibrated, the reader reports the error and clears the invalid selection rather than syncing incorrect text.
+For PDFs whose embedded fonts differ from the browser's fallback fonts, selectable words are positioned using the PDF's own line and glyph widths so the highlighted text matches the page image, including beside superscript citations where PDF.js separates a leading space into another text item. If a page's selection cannot be calibrated, the reader reports the error and clears the invalid selection rather than syncing incorrect text.
 
 The canvas also exposes `open_document` to switch the PDF without closing the panel. The current PDF path can be absolute or relative to the session's project directory.
 

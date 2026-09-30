@@ -11,10 +11,16 @@ const advances = [
 
 test("extracts original glyph advances from PDF text operators", () => {
     const runs = glyphRunsFor({
-        fnArray: [44, 45, 99],
+        fnArray: [44, 45, 44, 99],
         argsArray: [
             [[{ unicode: "a", width: 400 }, { unicode: "b", width: 600 }, { unicode: " ", width: 200 }]],
             [[{ unicode: "c", width: 500 }, 50, { unicode: "d", width: 500 }]],
+            [[
+                { unicode: " ", width: 200 },
+                { unicode: "seizure", width: 3000 },
+                { unicode: " ", width: 200 },
+                { unicode: "detection", width: 3900 },
+            ]],
             [[{ unicode: "ignored", width: 1 }]],
         ],
     }, { showText: 44, showSpacedText: 45 });
@@ -22,6 +28,9 @@ test("extracts original glyph advances from PDF text operators", () => {
     assert.deepEqual(runs, [
         { text: "ab", advances: [400, 600] },
         { text: "cd", advances: [450, 500] },
+        { text: "seizure detection", advances: [
+            ...Array(7).fill(3000 / 7), 200, ...Array(9).fill(3900 / 9),
+        ] },
     ]);
 });
 
@@ -83,4 +92,13 @@ test("attaches word spans at the PDF width even when the DOM line is wider", () 
         if (previousNode === undefined) delete globalThis.Node;
         else globalThis.Node = previousNode;
     }
+});
+
+test("keeps the complete last word inside the PDF item width", () => {
+    const text = "seizure detection";
+    const advances = [...Array(7).fill(430), 200, ...Array(9).fill(435)];
+    const segments = wordSegments(text, advances, 122);
+    assert.deepEqual(segments.map(({ text }) => text), ["seizure ", "detection"]);
+    assert.equal(segments[1].left + segments[1].width, 122);
+    assert.equal(nearestGlyphOffset(segments[1].advances, 1), "detection".length);
 });
