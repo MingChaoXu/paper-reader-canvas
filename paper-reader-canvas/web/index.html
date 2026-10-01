@@ -41,7 +41,34 @@
   <footer>
     <p id="selection-label">尚未选中文字</p>
     <div id="selection-preview" aria-live="polite">划选论文中的英文单词、句子或段落。</div>
-    <button id="translate" type="button" disabled>翻译选中内容</button>
+    <div class="reader-actions">
+      <button id="translate" type="button" disabled>翻译选中内容</button>
+      <button id="speak-selection" type="button" disabled>英文发音</button>
+      <button id="speak-translation" type="button" disabled>朗读译文</button>
+      <button id="stop-speech" type="button" disabled>停止朗读</button>
+    </div>
+    <div class="speech-controls">
+      <label class="inline-label"><input id="auto-read" type="checkbox" disabled> 翻译后自动朗读</label>
+      <label class="inline-label" for="speech-rate">语速
+        <select id="speech-rate">
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+        </select>
+      </label>
+      <details class="voice-options">
+        <summary>系统声音</summary>
+        <label for="english-voice">英文 <select id="english-voice" disabled></select></label>
+        <label for="chinese-voice">中文 <select id="chinese-voice" disabled></select></label>
+      </details>
+    </div>
+    <p id="speech-status" role="status" aria-live="polite">正在检查本机语音…</p>
+    <details id="translation-panel" hidden>
+      <summary id="translation-label">译文</summary>
+      <div id="translation-text"></div>
+    </details>
+    <audio id="speech-audio" preload="auto" hidden></audio>
     <p id="status" role="status" aria-live="polite">划词后也可以在会话里说“翻译刚选中的文字”。</p>
   </footer>
 </body>

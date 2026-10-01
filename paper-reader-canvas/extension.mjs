@@ -58,6 +58,15 @@ session = await joinSession({
                         return selection;
                     },
                 },
+                {
+                    name: "get_translation",
+                    description: "Read the latest translation requested from this reader, including pending/error status.",
+                    handler: (ctx) => {
+                        const translation = panel(ctx.instanceId).getTranslation();
+                        if (!translation) throw new CanvasError("no_translation", "Click translate in the Paper Reader first.");
+                        return translation;
+                    },
+                },
             ],
             open: async (ctx) => {
                 let entry = panels.get(ctx.instanceId);
@@ -67,6 +76,11 @@ session = await joinSession({
                             workspaceRoot: process.cwd(),
                             initialPath: ctx.input?.path,
                             send: (options) => session.send(options),
+                        });
+
+                        session.on((event) => {
+                            if (!["assistant.message", "assistant.idle", "session.idle", "session.error"].includes(event.type)) return;
+                            for (const entry of panels.values()) entry.acceptSessionEvent(event);
                         });
                         panels.set(ctx.instanceId, entry);
                     } else if (ctx.input?.path) {

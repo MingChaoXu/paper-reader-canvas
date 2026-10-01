@@ -6,6 +6,8 @@ import { randomBytes } from "node:crypto";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliDecompressSync } from "node:zlib";
+import { createTranslationTracker } from "./translation.mjs";
+import { createNativeSpeech, speechText } from "./native-speech.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const maxSelection = 12_000;
@@ -19,6 +21,7 @@ const assets = new Map([
     ["/zoom.mjs", ["web/zoom.mjs", "text/javascript; charset=utf-8"]],
     ["/pan.mjs", ["web/pan.mjs", "text/javascript; charset=utf-8"]],
     ["/connection.mjs", ["web/connection.mjs", "text/javascript; charset=utf-8"]],
+    ["/speech.mjs", ["web/speech.mjs", "text/javascript; charset=utf-8"]],
     ["/style.css", ["web/style.css", "text/css; charset=utf-8"]],
     ["/vendor/pdf.min.mjs", ["vendor/pdf.min.mjs", "text/javascript; charset=utf-8"]],
     ["/vendor/pdf.worker.min.mjs", [["vendor/pdf.worker.min.mjs.part1", "vendor/pdf.worker.min.mjs.part2"], "text/javascript; charset=utf-8"]],
@@ -109,16 +112,36 @@ function byteRange(header, size) {
     return { start, end };
 }
 
-export async function createReaderServer({ workspaceRoot, initialPath, send, heartbeatMs = 15_000 }) {
-    const state = { document: null, selection: null, version: 0 };
+export async function createReaderServer({
+    workspaceRoot, initialPath, send, heartbeatMs = 15_000,
+    speech = createNativeSpeech(), translationTimeoutMs = 180_000,
+}) {
+    const state = { document: null, selection: null, translation: null, version: 0 };
     const listeners = new Set();
     const token = randomBytes(24).toString("hex");
     let origin;
+    let speechController;
+    function broadcast(name, data) {
+        for (const listener of listeners) listener.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+    }
+    const translations = createTranslationTracker({
+        send, timeoutMs: translationTimeoutMs,
+        onChange: (translation) => {
+            state.translation = translation;
+            broadcast("translation", { translation, version: state.version });
+        },
+    });
+
+    function resetTranslation() {
+        speechController?.abort();
+        translations.clear();
+    }
 
     async function openDocument(path) {
         state.document = await validatePdf(path, workspaceRoot);
         state.selection = null;
         state.version++;
+        resetTranslation();
         for (const listener of listeners) listener.write("event: document\ndata: changed\n\n");
         return state.document;
     }
@@ -158,7 +181,7 @@ export async function createReaderServer({ workspaceRoot, initialPath, send, hea
         async function handle() {
             response.setHeader("Cache-Control", "no-store");
             response.setHeader("X-Content-Type-Options", "nosniff");
-            response.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'");
+            response.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'none'");
             if (request.headers.host !== new URL(origin).host) {
                 throw new ReaderError("forbidden", "Invalid host.", 403);
             }
@@ -196,12 +219,14 @@ export async function createReaderServer({ workspaceRoot, initialPath, send, hea
                 state.document = { kind: "browser", name: basename(name) };
                 state.selection = null;
                 state.version++;
+                resetTranslation();
                 sendJson(response, 200, { document: state.document, version: state.version });
             } else if (request.method === "POST" && route === "/reset-browser-file") {
                 if (state.document?.kind === "browser") {
                     state.document = null;
                     state.selection = null;
                     state.version++;
+                    resetTranslation();
                 }
                 sendJson(response, 200, { document: state.document, version: state.version });
             } else if (request.method === "POST" && route === "/selection") {
@@ -228,13 +253,61 @@ export async function createReaderServer({ workspaceRoot, initialPath, send, hea
                 }
                 sendJson(response, 200, { selection: state.selection });
             } else if (request.method === "POST" && route === "/translate") {
+                const { version } = await jsonBody(request);
+                if (version !== undefined && version !== state.version) {
+                    throw new ReaderError("stale_selection", "The PDF changed; select text again.", 409);
+                }
                 if (!state.selection) throw new ReaderError("no_selection", "Select PDF text first.", 409);
                 const selection = state.selection;
-                const messageId = await send({
-                    prompt: translationPrompt(selection),
-                    displayPrompt: `翻译 ${selection.document.name} 第 ${selection.page} 页选区：“${selection.text.slice(0, 80)}”`,
-                });
-                sendJson(response, 200, { messageId });
+                sendJson(response, 200, await translations.start(selection, state.version, translationPrompt(selection)));
+            } else if (request.method === "GET" && route === "/speech/voices") {
+                try {
+                    sendJson(response, 200, { voices: await speech.voices() });
+                } catch (error) {
+                    console.error("Paper Reader voice discovery failed:", error);
+                    throw new ReaderError("speech_unavailable", error.message, 503);
+                }
+            } else if (request.method === "POST" && route === "/speech") {
+                const { kind, voiceId, rate, version, translationId } = await jsonBody(request);
+                if (version !== state.version) throw new ReaderError("stale_speech", "PDF 已切换，请重新选择文字。", 409);
+                if (!["selection", "translation"].includes(kind) || !Number.isFinite(rate) || rate < 0.5 || rate > 2 ||
+                    (voiceId !== undefined && (typeof voiceId !== "string" || voiceId.length > 200))) {
+                    throw new ReaderError("invalid_speech", "朗读类型、语速或声音无效。");
+                }
+                let text;
+                if (kind === "selection") {
+                    if (!state.selection) throw new ReaderError("no_selection", "请先划选英文文字。", 409);
+                    text = state.selection.text;
+                } else {
+                    if (state.translation?.status !== "ready" || state.translation.id !== translationId) {
+                        throw new ReaderError("no_translation", "请等待当前译文返回后再朗读。", 409);
+                    }
+                    text = speechText(state.translation.text);
+                    if (!text) throw new ReaderError("empty_translation", "译文没有可朗读的文字。", 409);
+                }
+                speechController?.abort();
+                const controller = new AbortController();
+                speechController = controller;
+                const onClose = () => { if (!response.writableEnded) controller.abort(); };
+                response.once("close", onClose);
+                try {
+                    const bytes = await speech.synthesize({
+                        text, lang: kind === "selection" ? "en" : "zh", voiceId, rate, signal: controller.signal,
+                    });
+                    if (controller.signal.aborted || response.destroyed) return;
+                    if (version !== state.version) throw new ReaderError("stale_speech", "PDF 已切换，请重新选择文字。", 409);
+                    response.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": bytes.length });
+                    response.end(bytes);
+                } catch (error) {
+                    if (response.destroyed) return;
+                    if (controller.signal.aborted) throw new ReaderError("speech_cancelled", "朗读已取消。", 409);
+                    if (error instanceof ReaderError) throw error;
+                    console.error("Paper Reader speech failed:", error);
+                    throw new ReaderError("speech_failed", error.message, 503);
+                } finally {
+                    response.off("close", onClose);
+                    if (speechController === controller) speechController = undefined;
+                }
             } else if (request.method === "GET") {
                 let asset = assets.get(route);
                 if (!asset && /^\/vendor\/cmaps\/[A-Za-z0-9._-]+\.bcmap$/.test(route)) {
@@ -287,7 +360,11 @@ export async function createReaderServer({ workspaceRoot, initialPath, send, hea
         url: `${origin}/${token}/`,
         openDocument,
         getSelection: () => state.selection,
+        getTranslation: translations.get,
+        acceptSessionEvent: translations.acceptEvent,
         close: async () => {
+            resetTranslation();
+            speech.close();
             for (const listener of listeners) listener.end();
             await new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
         },

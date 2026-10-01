@@ -4,6 +4,7 @@ import { enableRightDragPan } from "./pan.mjs";
 import { monitorConnection } from "./connection.mjs";
 import { attachGlyphRuns, correctSelectionRange, glyphRunsFor } from "./selection.mjs";
 import { maxZoom, minZoom, pageAnchor, restoreAnchor, wheelPixels, wheelZoom } from "./zoom.mjs";
+import { createAudioPlayer, createTranslationView } from "./speech.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -31,6 +32,91 @@ let selectionUpdate = Promise.resolve();
 let selectionReady = false;
 let selectionFrame;
 let documentVersion = 0;
+let englishAvailable = false;
+let chineseAvailable = false;
+let speechBusy = false;
+
+function speechStatus(message, error = false) {
+    $("#speech-status").textContent = message;
+    $("#speech-status").classList.toggle("error", error);
+}
+
+function updateSpeechButtons() {
+    $("#speak-selection").disabled = !englishAvailable || !selectionReady;
+    $("#speak-translation").disabled = !chineseAvailable || translations.get()?.status !== "ready";
+    $("#stop-speech").disabled = !speechBusy;
+}
+
+const speaker = createAudioPlayer({
+    audio: $("#speech-audio"),
+    fetchAudio: async (options, signal) => {
+        const response = await fetch("./speech", {
+            method: "POST", signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(options),
+        });
+        if (!response.ok) throw new Error((await response.json()).error || `HTTP ${response.status}`);
+        return response.blob();
+    },
+    onState: (state) => {
+        speechBusy = state !== "idle";
+        updateSpeechButtons();
+    },
+    onStatus: speechStatus,
+});
+
+function read(kind, automatic = false) {
+    const translation = translations.get();
+    return speaker.play({
+        kind, version: documentVersion,
+        ...(kind === "translation" ? { translationId: translation?.id } : {}),
+        rate: Number($("#speech-rate").value),
+        voiceId: $(kind === "selection" ? "#english-voice" : "#chinese-voice").value || undefined,
+    }, { automatic });
+}
+
+const translations = createTranslationView({
+    stop: () => speaker.stop(),
+    autoRead: () => $("#auto-read").checked && chineseAvailable,
+    read: () => read("translation", true),
+    render: (translation) => {
+        $("#translation-panel").hidden = !translation;
+        if (translation) {
+            const selection = translation.selection;
+            $("#translation-label").textContent = `第 ${selection.page} 页 · ${selection.text.slice(0, 40)} · ${
+                translation.status === "pending" ? "等待译文…" : translation.status === "error" ? "翻译失败" : "译文"}`;
+            $("#translation-text").textContent = translation.status === "error" ? translation.error : translation.text;
+            if (translation.status === "error") speechStatus(translation.error, true);
+        } else {
+            $("#translation-text").textContent = "";
+        }
+        $("#speak-translation").disabled = !chineseAvailable || translation?.status !== "ready";
+    },
+});
+
+async function loadVoices() {
+    try {
+        const { voices } = await request("speech/voices");
+        for (const [language, selector] of [["en", "#english-voice"], ["zh", "#chinese-voice"]]) {
+            const matching = voices.filter(({ lang }) => lang.toLowerCase().startsWith(language));
+            const select = $(selector);
+            select.replaceChildren(new Option("自动选择（本机）", ""));
+            for (const voice of matching) select.append(new Option(`${voice.name} · ${voice.lang}`, voice.id));
+            select.disabled = matching.length === 0;
+            if (language === "en") englishAvailable = matching.length > 0;
+            else chineseAvailable = matching.length > 0;
+        }
+        $("#auto-read").disabled = !chineseAvailable;
+        updateSpeechButtons();
+        if (!englishAvailable || !chineseAvailable) {
+            speechStatus(`缺少${!englishAvailable ? "英文" : ""}${!englishAvailable && !chineseAvailable ? "及" : ""}${!chineseAvailable ? "中文" : ""}系统声音；请安装相应语音包后重新打开阅读器。`, true);
+        } else {
+            speechStatus("本机语音已就绪；可播放英文选区或开启译文自动朗读。");
+        }
+    } catch (error) {
+        speechStatus(`本地朗读不可用：${error.message}`, true);
+    }
+}
 
 function status(message, error = false) {
     $("#status").textContent = message;
@@ -57,6 +143,7 @@ function clearSelection() {
     translateButton.disabled = true;
     $("#selection-label").textContent = "尚未选中文字";
     $("#selection-preview").textContent = "划选论文中的英文单词、句子或段落。";
+    updateSpeechButtons();
 }
 
 function showDocument(name, pages) {
@@ -67,6 +154,8 @@ function showDocument(name, pages) {
 }
 
 async function stopDocument() {
+    speaker.stop();
+    translations.update(null, documentVersion);
     generation++;
     if (zoomFrame) cancelAnimationFrame(zoomFrame);
     zoomFrame = undefined;
@@ -227,10 +316,13 @@ async function renderPages(anchor = centerAnchor()) {
 }
 
 async function refreshDocument() {
-    const { document: source, workspaceRoot, version } = await request("state");
+    const { document: source, workspaceRoot, version, translation } = await request("state");
     $("#path").placeholder = `${workspaceRoot}/paper.pdf`;
     if (source?.kind === "browser") {
-        if (activeSource === `browser:${source.name}` && pdf && documentVersion === version) return;
+        if (activeSource === `browser:${source.name}` && pdf && documentVersion === version) {
+            translations.update(translation, version);
+            return;
+        }
         if (pdf) {
             await stopDocument();
             viewer.replaceChildren();
@@ -249,6 +341,7 @@ async function refreshDocument() {
         $("#path").value = source.path;
         await displayDocument({ url: new URL("./pdf", import.meta.url).href }, source.name);
     }
+    translations.update(translation, version);
 }
 
 function surroundingText(range, layer, text) {
@@ -310,6 +403,7 @@ function captureSelection() {
         if (text && result.selection && version === documentVersion) {
             selectionReady = true;
             translateButton.disabled = false;
+            updateSpeechButtons();
             $("#selection-label").textContent = `已选中 · 第 ${page.dataset.page} 页`;
             $("#selection-preview").textContent = text;
             status("选区已同步；可直接在会话里提问，或点击翻译。");
@@ -388,7 +482,7 @@ translateButton.addEventListener("click", async () => {
     if (!selectionReady) return;
     translateButton.disabled = true;
     try {
-        const result = await request("translate", "POST", {});
+        const result = await request("translate", "POST", { version: documentVersion });
         status(`已将选中内容送入当前 Copilot 会话（消息 ${result.messageId.slice(0, 8)}）。`);
     } catch (error) {
         status(`发送翻译请求失败：${error.message}`, true);
@@ -396,6 +490,24 @@ translateButton.addEventListener("click", async () => {
         translateButton.disabled = !selectionReady;
     }
 });
+
+$("#speak-selection").addEventListener("click", () => { if (selectionReady) read("selection"); });
+$("#speak-translation").addEventListener("click", () => { if (translations.get()?.status === "ready") read("translation"); });
+$("#stop-speech").addEventListener("click", () => {
+    speaker.stop();
+    speechStatus("朗读已停止。");
+});
+$("#auto-read").addEventListener("change", async () => {
+    if ($("#auto-read").checked) {
+        const enabled = await speaker.unlock();
+        $("#auto-read").checked = enabled;
+        if (enabled) speechStatus("已开启：下次点击翻译后，将自动朗读返回的译文。");
+    } else {
+        speaker.stop();
+        speechStatus("已关闭自动朗读。");
+    }
+});
+window.addEventListener("pagehide", () => speaker.stop());
 
 for (const [id, factor] of [["zoom-in", 1.2], ["zoom-out", 1 / 1.2]]) {
     $(`#${id}`).addEventListener("click", () => {
@@ -406,14 +518,25 @@ for (const [id, factor] of [["zoom-in", 1.2], ["zoom-out", 1 / 1.2]]) {
     });
 }
 
+let viewerWidth = viewer.clientWidth;
 new ResizeObserver(() => {
-    if (pdf && viewer.clientWidth) {
+    if (viewer.clientWidth === viewerWidth) return;
+    viewerWidth = viewer.clientWidth;
+    if (pdf && viewerWidth) {
         clearTimeout(viewer.resizeTimer);
         viewer.resizeTimer = setTimeout(() => renderPages(), 300);
     }
 }).observe(viewer);
 
 const events = new EventSource("./events");
+events.addEventListener("translation", (event) => {
+    try {
+        const { translation, version } = JSON.parse(event.data);
+        if (version === documentVersion) translations.update(translation, version, { live: true });
+    } catch (error) {
+        speechStatus(`接收译文失败：${error.message}`, true);
+    }
+});
 let connectionMessage;
 monitorConnection(events, {
     onDocument: () => refreshDocument().catch((error) => status(`刷新文档失败：${error.message}`, true)),
@@ -435,3 +558,4 @@ monitorConnection(events, {
     },
 });
 refreshDocument().catch((error) => status(`阅读器初始化失败：${error.message}`, true));
+loadVoices();

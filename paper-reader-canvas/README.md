@@ -32,6 +32,16 @@ For PDFs whose embedded fonts differ from the browser's fallback fonts, matched 
 
 The canvas also exposes `open_document` to switch the PDF without closing the panel. The current PDF path can be absolute or relative to the session's project directory.
 
+## Pronunciation and translation speech
+
+Click **英文发音** to hear the selected English text. Click **朗读译文** to play or replay the latest Chinese translation, and **停止朗读** to cancel playback or audio generation. **语速** and **系统声音** control the rate and installed English/Chinese voices.
+
+Enable **翻译后自动朗读** once in the reader, then click **翻译选中内容** as usual. The extension associates the assistant's completed reply with that translation request, displays it under **译文**, and reads it automatically. Other chat messages, analysis, and subagent output are never used as translations. Requests made directly in chat, rather than through the reader's translate button, are not automatically read. Markdown formatting is removed for speech; the displayed reply is unchanged.
+
+Speech uses the local operating system: `say` on macOS, and Windows PowerShell's installed `System.Speech` voices on Windows. It requires no TTS API key or cloud voice service. Install English and Mandarin voices in your system settings if either language is missing. Linux is not currently supported. If the embedded browser blocks autoplay, click **朗读译文** manually. Speech errors do not disable PDF reading or translation.
+
+Automatic reading is off by default, and speech controls reset when the reader page reloads. Translation results belong to the running reader and clear when switching PDFs or restarting the extension. Switching PDFs also stops the previous audio. Reconnecting after a temporary interruption restores the translation without replaying it. Responses that cannot be matched to the request time out visibly after three minutes; older Copilot versions without reply-origin metadata may need an update. Windows speech rates are approximate because its system engine uses discrete speed levels.
+
 ## Other agents
 
 The PDF renderer, local server, and selection handling can be reused by other agents. The current canvas registration and `session.send()` message delivery depend on the Copilot SDK. A Codex integration would need a separate adapter (for example, a local MCP server exposing `open_document` and `get_selection`, plus a browser UI for selection). **Codex support is not implemented; this extension cannot be installed directly in Codex.**
@@ -40,6 +50,7 @@ The PDF renderer, local server, and selection handling can be reused by other ag
 
 - The PDF and viewer assets are served on a random-token URL bound only to `127.0.0.1`. No PDF bytes are sent to GitHub or an external PDF service by the extension. Clicking translate or asking the agent about the selection passes the **selected text and nearby context** to the active AI session, subject to your provider's service settings.
 - The GitHub repository contains only extension source and PDF.js assets; do not commit papers or personal data.
+- Pronunciation and translation audio are generated locally. Temporary WAV files are deleted after generation, with only the latest audio retained in memory for replay until replaced or the reader closes. No microphone access or additional external TTS requests are used.
 - Scanned/image-only PDFs have no selectable text; OCR is not included.
 - The current selection is transient and clears when a different PDF is opened or the extension restarts. A PDF chosen through the file picker needs to be chosen again after a reload.
 - Temporary connection loss after waking from sleep is retried automatically without reopening the canvas. If the extension process has stopped and its loopback address no longer works, reopen the canvas to get a new address.

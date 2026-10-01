@@ -130,7 +130,7 @@ test("reads local PDF ranges and sends only the selected words and context", asy
         const indexHtml = await (await fetch(base)).text();
         const polyfillScript = indexHtml.indexOf('src="./polyfills.mjs"');
         assert.ok(polyfillScript >= 0 && polyfillScript < indexHtml.indexOf('src="./app.mjs"'));
-        for (const asset of ["polyfills.mjs", "selection.mjs"]) {
+        for (const asset of ["polyfills.mjs", "selection.mjs", "speech.mjs"]) {
             const response = await fetch(new URL(asset, base));
             assert.equal(response.status, 200);
             assert.match(response.headers.get("content-type"), /text\/javascript/);
@@ -192,6 +192,81 @@ test("invalid PDF paths fail clearly and quoted document text stays data", async
         assert.match(prompt, /第|页码：3/);
         assert.match(prompt, /dendritic cells/);
     } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
+test("returns correlated translations over SSE and synthesizes only current selection or reply", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paper-reader-speech-test-"));
+    await writeFile(join(dir, "paper.pdf"), samplePdf("oscillatory"));
+    const spoken = [];
+    let closed = false;
+    const wave = Buffer.alloc(46);
+    wave.write("RIFF", 0); wave.write("WAVE", 8);
+    const reader = await createReaderServer({
+        workspaceRoot: dir, initialPath: "paper.pdf", send: async () => "translation-request",
+        speech: {
+            voices: async () => [{ id: "English", name: "English", lang: "en-US" }],
+            synthesize: async (options) => { spoken.push(options); return wave; },
+            close: () => { closed = true; },
+        },
+    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+        const base = new URL(reader.url);
+        const post = (route, body) => fetch(new URL(route, base), {
+            method: "POST", headers: { Origin: base.origin, "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        const state = await (await fetch(new URL("state", base))).json();
+        const version = state.version;
+        const voiceResponse = await fetch(new URL("speech/voices", base));
+        assert.equal((await voiceResponse.json()).voices[0].id, "English");
+        const eventResponse = await fetch(new URL("events", base), { signal: controller.signal });
+        const stream = eventResponse.body.getReader();
+        await post("selection", { text: "oscillatory", context: "oscillatory cycles", page: 4, version });
+        const original = await post("speech", { kind: "selection", rate: 1, version });
+        assert.equal(original.headers.get("content-type"), "audio/wav");
+        assert.match(original.headers.get("content-security-policy"), /media-src 'self' blob:/);
+        assert.deepEqual(Buffer.from(await original.arrayBuffer()), wave);
+        assert.equal(spoken[0].text, "oscillatory");
+        assert.equal(spoken[0].lang, "en");
+        assert.equal((await post("speech", { kind: "arbitrary", text: "not permitted", rate: 1, version })).status, 400);
+        assert.equal((await post("speech", { kind: "selection", rate: 4, version })).status, 400);
+        const translation = await (await post("translate", { version })).json();
+        assert.equal((await post("speech", { kind: "translation", translationId: translation.translationId, rate: 1, version })).status, 409);
+        reader.acceptSessionEvent({
+            type: "assistant.message",
+            data: { originatingMessageId: "other", content: "unrelated private reply" },
+        });
+        reader.acceptSessionEvent({
+            type: "assistant.message",
+            data: { originatingMessageId: "translation-request", content: "**振荡的**，指振荡周期。" },
+        });
+        reader.acceptSessionEvent({ type: "assistant.idle", data: {} });
+        let frames = "";
+        while (!frames.includes('"status":"ready"')) {
+            const { value, done } = await stream.read();
+            assert.equal(done, false);
+            frames += new TextDecoder().decode(value);
+        }
+        assert.match(frames, /event: translation/);
+        assert.ok(!frames.includes("unrelated private reply"));
+        assert.equal(reader.getTranslation().text, "**振荡的**，指振荡周期。");
+        const translated = await post("speech", { kind: "translation", translationId: translation.translationId, rate: 1.25, version });
+        assert.equal(translated.status, 200);
+        await translated.arrayBuffer();
+        assert.equal(spoken[1].text, "振荡的，指振荡周期。");
+        assert.equal(spoken[1].lang, "zh");
+        await reader.openDocument("paper.pdf");
+        assert.equal(reader.getTranslation(), null);
+        assert.equal((await post("speech", { kind: "selection", rate: 1, version })).status, 409);
+    } finally {
+        clearTimeout(timeout);
+        controller.abort();
+        await reader.close();
+        assert.equal(closed, true);
         await rm(dir, { recursive: true, force: true });
     }
 });
