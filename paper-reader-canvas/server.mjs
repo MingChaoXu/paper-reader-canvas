@@ -22,6 +22,7 @@ const assets = new Map([
     ["/pan.mjs", ["web/pan.mjs", "text/javascript; charset=utf-8"]],
     ["/connection.mjs", ["web/connection.mjs", "text/javascript; charset=utf-8"]],
     ["/speech.mjs", ["web/speech.mjs", "text/javascript; charset=utf-8"]],
+    ["/navigation.mjs", ["web/navigation.mjs", "text/javascript; charset=utf-8"]],
     ["/style.css", ["web/style.css", "text/css; charset=utf-8"]],
     ["/vendor/pdf.min.mjs", ["vendor/pdf.min.mjs", "text/javascript; charset=utf-8"]],
     ["/vendor/pdf.worker.min.mjs", [["vendor/pdf.worker.min.mjs.part1", "vendor/pdf.worker.min.mjs.part2"], "text/javascript; charset=utf-8"]],

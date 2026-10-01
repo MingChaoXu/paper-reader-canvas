@@ -130,7 +130,7 @@ test("reads local PDF ranges and sends only the selected words and context", asy
         const indexHtml = await (await fetch(base)).text();
         const polyfillScript = indexHtml.indexOf('src="./polyfills.mjs"');
         assert.ok(polyfillScript >= 0 && polyfillScript < indexHtml.indexOf('src="./app.mjs"'));
-        for (const asset of ["polyfills.mjs", "selection.mjs", "speech.mjs"]) {
+        for (const asset of ["polyfills.mjs", "selection.mjs", "speech.mjs", "navigation.mjs"]) {
             const response = await fetch(new URL(asset, base));
             assert.equal(response.status, 200);
             assert.match(response.headers.get("content-type"), /text\/javascript/);

@@ -5,6 +5,7 @@ import { monitorConnection } from "./connection.mjs";
 import { attachGlyphRuns, correctSelectionRange, glyphRunsFor } from "./selection.mjs";
 import { maxZoom, minZoom, pageAnchor, restoreAnchor, wheelPixels, wheelZoom } from "./zoom.mjs";
 import { createAudioPlayer, createTranslationView } from "./speech.mjs";
+import { createPageNavigation } from "./navigation.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -35,6 +36,26 @@ let documentVersion = 0;
 let englishAvailable = false;
 let chineseAvailable = false;
 let speechBusy = false;
+let layoutAnchor;
+
+function rememberLayoutAnchor(anchor) {
+    layoutAnchor = anchor ? { anchor, run: generation, top: viewer.scrollTop, left: viewer.scrollLeft } : null;
+}
+
+const navigation = createPageNavigation({
+    viewer, form: $("#page-form"), input: $("#page-number"), total: $("#page-total"),
+    previous: $("#previous-page"), next: $("#next-page"), submit: $("#page-go"),
+    topInset: () => Number.parseFloat(getComputedStyle(viewer).paddingTop),
+    onError: (message) => status(message, true),
+    onJump: (number) => {
+        const rect = viewer.querySelector(`.paper-page[data-page="${number}"]`).getBoundingClientRect();
+        const viewerRect = viewer.getBoundingClientRect();
+        const x = Math.max(rect.left, Math.min(viewerRect.left + viewer.clientWidth / 2, rect.right));
+        lastZoomAnchor = pageAnchor(viewer, x, rect.top);
+        rememberLayoutAnchor(lastZoomAnchor);
+        status(`已跳转至第 ${number} 页。`);
+    },
+});
 
 function speechStatus(message, error = false) {
     $("#speech-status").textContent = message;
@@ -154,6 +175,8 @@ function showDocument(name, pages) {
 }
 
 async function stopDocument() {
+    navigation.setDocument(0);
+    layoutAnchor = null;
     speaker.stop();
     translations.update(null, documentVersion);
     generation++;
@@ -184,6 +207,7 @@ async function displayDocument(source, label) {
         if (run !== generation) return;
         activeSource = undefined;
         viewer.replaceChildren();
+        navigation.setDocument(0);
         status(`无法打开 PDF：${error.message}`, true);
     }
 }
@@ -206,6 +230,8 @@ function scheduleZoomRender(anchor) {
 async function renderPages(anchor = centerAnchor()) {
     if (!pdf) return;
     const run = ++generation;
+    navigation.loading();
+    layoutAnchor = null;
     observer?.disconnect();
     viewer.replaceChildren();
     const first = await pdf.getPage(1);
@@ -225,10 +251,16 @@ async function renderPages(anchor = centerAnchor()) {
             if (run !== generation) return;
             stage = "prepare viewport";
             const viewport = page.getViewport({ scale });
+            const saved = layoutAnchor;
+            const preserve = saved?.run === run && Math.abs(viewer.scrollTop - saved.top) < 1 &&
+                Math.abs(viewer.scrollLeft - saved.left) < 1;
             pageMetrics.set(pageNumber, { width: viewport.width / scale, height: viewport.height / scale });
             pageElement.style.width = `${viewport.width}px`;
             pageElement.style.height = `${viewport.height}px`;
-            if (anchor && pageNumber === anchor.number) restoreAnchor(viewer, anchor);
+            if (preserve) {
+                restoreAnchor(viewer, saved.anchor);
+                rememberLayoutAnchor(saved.anchor);
+            }
             pageElement.replaceChildren();
             const canvas = document.createElement("canvas");
             const ratio = Math.min(devicePixelRatio || 1, 2);
@@ -312,6 +344,8 @@ async function renderPages(anchor = centerAnchor()) {
     }
     viewer.append(fragment);
     restoreAnchor(viewer, anchor);
+    rememberLayoutAnchor(anchor);
+    navigation.setDocument(pdf.numPages);
     for (const element of viewer.querySelectorAll(".paper-page")) observer.observe(element);
 }
 
@@ -520,6 +554,7 @@ for (const [id, factor] of [["zoom-in", 1.2], ["zoom-out", 1 / 1.2]]) {
 
 let viewerWidth = viewer.clientWidth;
 new ResizeObserver(() => {
+    navigation.refresh();
     if (viewer.clientWidth === viewerWidth) return;
     viewerWidth = viewer.clientWidth;
     if (pdf && viewerWidth) {

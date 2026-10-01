@@ -22,6 +22,8 @@ Open Paper Reader with doc/paper.pdf
 
 You can also paste an absolute or project-relative `.pdf` path into the canvas, or use **选择本机 PDF** for a file outside the project. File-picker PDFs stay in the browser's memory and must be selected again after a reload.
 
+Use the page-number field at the top to jump directly to a PDF page: type `4` and press **Enter** or click **跳转**. The **‹ / ›** buttons move to the previous/next page, and the field follows your reading position when you scroll (without replacing a number you are editing). The first/last-page buttons and controls without an open PDF are disabled. Page numbers use the PDF's physical page order starting at 1, not printed page labels. Jumping keeps your zoom and horizontal pan position.
+
 Scroll the mouse wheel over the PDF to zoom in or out around the pointer. Hold **Shift** while scrolling to move through pages instead; the **− / +** buttons zoom around the center of the reading area.
 
 Drag with the **right mouse button** to pan the page horizontally or vertically. Panning ends when the pointer leaves the reading area or the window loses focus, so it does not capture clicks elsewhere in the app. Left-button text selection still works. The native context menu is disabled inside the PDF reading area so it does not interrupt right-button dragging.

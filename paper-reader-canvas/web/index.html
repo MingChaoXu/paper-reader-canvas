@@ -15,10 +15,20 @@
         <h1>Paper Reader</h1>
         <p id="document-name">在侧栏阅读 PDF，划词后询问 Copilot</p>
       </div>
-      <div class="zoom" aria-label="页面缩放" title="滚轮缩放；Shift + 滚轮翻页">
-        <button id="zoom-out" type="button" aria-label="缩小">−</button>
-        <span id="zoom-label">100%</span>
-        <button id="zoom-in" type="button" aria-label="放大">+</button>
+      <div class="reader-controls">
+        <form id="page-form" class="page-navigation" aria-label="页码导航" novalidate>
+          <button id="previous-page" type="button" aria-label="上一页" title="上一页" disabled>‹</button>
+          <label for="page-number">第</label>
+          <input id="page-number" type="number" min="1" step="1" inputmode="numeric" enterkeyhint="go" aria-label="页码，输入后按 Enter 跳转" disabled>
+          <span id="page-total">/ 0</span><span>页</span>
+          <button id="page-go" type="submit" disabled>跳转</button>
+          <button id="next-page" type="button" aria-label="下一页" title="下一页" disabled>›</button>
+        </form>
+        <div class="zoom" aria-label="页面缩放" title="滚轮缩放；Shift + 滚轮翻页">
+          <button id="zoom-out" type="button" aria-label="缩小">−</button>
+          <span id="zoom-label">100%</span>
+          <button id="zoom-in" type="button" aria-label="放大">+</button>
+        </div>
       </div>
     </div>
     <form id="path-form">
