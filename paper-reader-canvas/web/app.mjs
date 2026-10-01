@@ -172,7 +172,10 @@ async function renderPages(anchor = centerAnchor()) {
             try {
                 const operatorList = await page.getOperatorList();
                 if (run !== generation) return;
-                const runs = glyphRunsFor(operatorList, pdfjs.OPS);
+                const runs = glyphRunsFor(operatorList, pdfjs.OPS, {
+                    normalizeText: pdfjs.normalizeUnicode,
+                    fontMatrixFor: (name) => page.commonObjs.get(name).fontMatrix?.[0] ?? 0.001,
+                });
                 layer.dataset.selectionRuns = `${attachGlyphRuns(textLayer, runs, textContent.items, viewport.scale * viewport.userUnit)}/${runs.length}`;
             } catch (error) {
                 if (run !== generation) return;

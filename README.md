@@ -18,6 +18,8 @@ https://github.com/MingChaoXu/paper-reader-canvas/tree/main/paper-reader-canvas
 
 按住**鼠标右键拖动**可向上下左右平移页面，左键仍可划词。阅读区内会禁用原生右键菜单，避免打断拖动。
 
+划词位置会按 PDF 字形宽度和字符/词间距校准，并处理 `µ` / `μ`、不换行空格等文本规范化差异。未匹配到字形的文本仍使用 PDF.js 默认文本层，位置可能存在偏差。
+
 阅读器的 PDF 渲染和划词逻辑可以复用到其他 AI 工具。Codex 支持通过 MCP 接入本地工具，但本仓库**尚未提供 Codex/MCP 适配器**，不能直接将此 Canvas 扩展安装到 Codex。
 
 PDF 不会由扩展上传到外部服务；点击翻译或主动询问选区时，仅选中的文字和少量邻近上下文进入当前 AI 会话。完整使用说明、隐私说明、开发和许可信息请阅读 [扩展文档](paper-reader-canvas/README.md)。

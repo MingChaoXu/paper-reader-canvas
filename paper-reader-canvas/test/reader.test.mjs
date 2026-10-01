@@ -7,6 +7,8 @@ import { brotliDecompressSync } from "node:zlib";
 import { createReaderServer, translationPrompt } from "../server.mjs";
 import * as pdfjs from "../vendor/pdf.min.mjs";
 import { textContentFor } from "../web/text-content.mjs";
+import { glyphRunsFor, wordSegments } from "../web/selection.mjs";
+import "../web/polyfills.mjs";
 
 const workerParts = [
     new URL("../vendor/pdf.worker.min.mjs.part1", import.meta.url),
@@ -16,7 +18,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `data:text/javascript;base64,${Buffer.conc
     await Promise.all(workerParts.map(async (url) => readFile(url))),
 ).toString("base64")}`;
 
-function samplePdf(text) {
+function samplePdf(text, spacing = "") {
     const objects = [
         "<< /Type /Catalog /Pages 2 0 R >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -24,7 +26,7 @@ function samplePdf(text) {
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         null,
     ];
-    const stream = `BT /F1 16 Tf 72 700 Td (${text}) Tj ET`;
+    const stream = `BT /F1 16 Tf ${spacing} 72 700 Td (${text}) Tj ET`;
     objects[4] = `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`;
     let output = "%PDF-1.4\n";
     const offsets = [0];
@@ -76,6 +78,32 @@ test("text layer reads a stream without an async iterator (WebKit)", async () =>
     assert.deepEqual(Object.keys(content.styles), ["F1", "F2"]);
     assert.equal(content.lang, "en");
     assert.equal(released, true);
+});
+
+test("calibrates words using actual PDF font and text spacing operators", async () => {
+    const task = pdfjs.getDocument({
+        data: new Uint8Array(samplePdf("64-sample kernel", "0.2 Tc 1.5 Tw")),
+        useSystemFonts: true,
+    });
+    try {
+        const page = await (await task.promise).getPage(1);
+        const content = await textContentFor(page);
+        const item = content.items.find(({ str }) => str === "64-sample kernel");
+        const operators = await page.getOperatorList();
+        const [run] = glyphRunsFor(operators, pdfjs.OPS, {
+            normalizeText: pdfjs.normalizeUnicode,
+            fontMatrixFor: (name) => page.commonObjs.get(name).fontMatrix?.[0] ?? 0.001,
+        });
+        assert.equal(run.text, item.str);
+        const totalWidth = run.advances.reduce((sum, width) => sum + width, 0) * 0.016;
+        assert.ok(Math.abs(totalWidth - item.width) < 1e-8);
+        const segments = wordSegments(run.text, run.advances, item.width);
+        assert.equal(segments[2].text, "kernel");
+        const kernelLeft = run.advances.slice(0, 10).reduce((sum, width) => sum + width, 0) * 0.016;
+        assert.ok(Math.abs(segments[2].left - kernelLeft) < 1e-8);
+    } finally {
+        await task.destroy();
+    }
 });
 
 test("reads local PDF ranges and sends only the selected words and context", async () => {

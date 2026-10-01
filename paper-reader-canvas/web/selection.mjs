@@ -1,33 +1,64 @@
 const glyphAdvancesByNode = new WeakMap();
 
-function glyphRun(values) {
+function glyphRun(values, state, normalizeText) {
     const text = [];
     const advances = [];
+    const widthScale = state.fontSize * state.fontMatrix;
     for (const value of values.flat(Infinity)) {
         if (typeof value === "number") {
-            if (advances.length) advances[advances.length - 1] -= value;
+            if (advances.length) advances[advances.length - 1] -= value / (1000 * state.fontMatrix);
             continue;
         }
         if (!value || typeof value.unicode !== "string") continue;
-        const width = Number(value.width) || 0;
-        const unitWidth = width / Math.max(value.unicode.length, 1);
-        for (let index = 0; index < value.unicode.length; index++) {
-            text.push(value.unicode[index]);
+        const unicode = normalizeText(value.unicode);
+        const spacing = state.charSpacing + (value.isSpace ? state.wordSpacing : 0);
+        const width = (Number(value.width) || 0) + spacing / widthScale;
+        const unitWidth = width / Math.max(unicode.length, 1);
+        for (let index = 0; index < unicode.length; index++) {
+            text.push(unicode[index]);
             advances.push(unitWidth);
         }
     }
     const joined = text.join("");
     const leading = joined.length - joined.trimStart().length;
     const trimmed = joined.trim();
-    return { text: trimmed, advances: advances.slice(leading, leading + trimmed.length) };
+    const trimmedAdvances = advances.slice(leading, leading + trimmed.length);
+    if (trimmedAdvances.length) trimmedAdvances[trimmedAdvances.length - 1] -= state.charSpacing / widthScale;
+    return { text: trimmed, advances: trimmedAdvances };
 }
 
-export function glyphRunsFor(operatorList, ops) {
+export function glyphRunsFor(operatorList, ops, {
+    normalizeText = (text) => text,
+    fontMatrixFor = () => 0.001,
+} = {}) {
     const runs = [];
+    const stack = [];
+    let state = { fontSize: 1, fontMatrix: 0.001, charSpacing: 0, wordSpacing: 0 };
+    function setFont([name, size]) {
+        state.fontSize = size;
+        state.fontMatrix = fontMatrixFor(name);
+    }
     for (let index = 0; index < operatorList.fnArray.length; index++) {
         const operation = operatorList.fnArray[index];
+        const args = operatorList.argsArray[index] || [];
+        if (operation === ops.save || operation === ops.paintFormXObjectBegin) {
+            stack.push({ ...state });
+        } else if (operation === ops.restore || operation === ops.paintFormXObjectEnd) {
+            if (stack.length) state = stack.pop();
+        } else if (operation === ops.setFont) {
+            setFont(args);
+        } else if (operation === ops.setGState) {
+            for (const [name, value] of args[0]) {
+                if (name === "Font") setFont(value);
+            }
+        } else if (operation === ops.setCharSpacing) {
+            state.charSpacing = args[0];
+        } else if (operation === ops.setWordSpacing) {
+            state.wordSpacing = args[0];
+        }
         if (operation !== ops.showText && operation !== ops.showSpacedText) continue;
-        const run = glyphRun(operatorList.argsArray[index] || []);
+        if (!state.fontSize || !state.fontMatrix) continue;
+        const run = glyphRun(args, state, normalizeText);
         if (run.text) runs.push(run);
     }
     return runs;
@@ -57,7 +88,7 @@ export function wordSegments(text, advances, width) {
     if (!(total > 0)) return [];
     let offset = 0;
     let position = 0;
-    return (text.match(/\S+\s*|\s+/g) || []).map((value) => {
+    return (text.match(/\S+|\s+/g) || []).map((value) => {
         const segmentAdvances = advances.slice(offset, offset + value.length);
         const advance = segmentAdvances.reduce((sum, amount) => sum + amount, 0);
         const segment = { text: value, left: position / total * width, width: advance / total * width, advances: segmentAdvances };
